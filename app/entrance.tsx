@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { isValidRoomId, normalizeRoomId, ROOM_ID_LENGTH } from '@/lib/room';
+import { Footer } from '@/app/components/Footer';
 
 export function Entrance({ notFoundId }: { notFoundId: string | null }) {
   const router = useRouter();
@@ -102,6 +103,8 @@ export function Entrance({ notFoundId }: { notFoundId: string | null }) {
             </button>
           </form>
         </div>
+
+        <Footer className="mt-8 flex-wrap" />
       </div>
     </main>
   );

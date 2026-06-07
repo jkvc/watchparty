@@ -90,10 +90,11 @@ body::after {
   }
 }
 
-/* Keep page content above the texture layers. */
+/* Keep page content above the texture layers. Note: no z-index here, so the
+ * page root does NOT create a stacking context — that lets the opaque video
+ * stage raise itself above the scanline overlay (z-50) to stay pattern-free. */
 body > * {
   position: relative;
-  z-index: 1;
 }
 
 /* Phosphor bloom on the pixel-display headings. */

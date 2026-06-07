@@ -26,6 +26,7 @@ import {
 } from '@/lib/sync-engine';
 import { loadYouTubeAPI, youtubeErrorMessage, YT_STATE, type YTPlayer } from './youtube';
 import { useRoomSnapshot, type RoomSnapshot } from './use-room-snapshot';
+import { Footer } from '@/app/components/Footer';
 
 // ─── Tuning ──────────────────────────────────────────────────────────────────
 // Capture and correction share ONE loop so capture always runs first and the
@@ -543,7 +544,11 @@ export function RoomClient({ roomId }: { roomId: string }) {
       </div>
 
       {/* Video stage — native YouTube controls drive play/pause/scrub */}
-      <div className="relative aspect-video w-full overflow-hidden border-2 border-border bg-black shadow-[0_0_40px_rgba(255,184,70,0.1)]">
+      <div
+        className={`relative aspect-video w-full overflow-hidden border-2 border-border bg-black shadow-[0_0_40px_rgba(255,184,70,0.1)] ${
+          joined && meta.videoId ? 'z-[60]' : ''
+        }`}
+      >
         <div ref={containerRef} className="h-full w-full" />
 
         {!joined && (
@@ -605,6 +610,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
       </form>
 
       {linkError && <p className="mt-2 font-mono text-sm text-accent">! {linkError}</p>}
+
+      <Footer className="mt-6 flex-wrap" />
     </main>
   );
 }
