@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { QRCodeSVG } from 'qrcode.react';
 import { useServerClock } from '@syncframe/core/react';
 import {
   isPlayingAnchor,
@@ -125,12 +124,15 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const [videoError, setVideoError] = useState<string | null>(null);
   const [linkInput, setLinkInput] = useState('');
   const [linkError, setLinkError] = useState<string | null>(null);
-  const [showShare, setShowShare] = useState(false);
-  const [shareUrl, setShareUrl] = useState('');
+  const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    setShareUrl(window.location.href);
-  }, []);
+  const copyCode = useCallback(() => {
+    void navigator.clipboard?.writeText(roomId);
+    setCopied(true);
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = setTimeout(() => setCopied(false), 1500);
+  }, [roomId]);
 
   // ─── Stable helpers (read refs; identity safe for effect deps) ─────────────
   /**
@@ -508,83 +510,68 @@ export function RoomClient({ roomId }: { roomId: string }) {
   };
 
   const { meta } = snapshot;
-  const synced = clock.sampleCount > 0;
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 py-5">
+    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col justify-center px-4 py-6 sm:px-6">
       {/* Header */}
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-5 flex items-center justify-between border-b-2 border-border pb-4">
         <button
           onClick={() => router.push('/')}
-          className="text-lg font-semibold tracking-tight text-neutral-200"
+          className="font-display text-3xl leading-none tracking-wide text-foreground"
         >
-          watch<span className="text-rose-500">party</span>
+          watch<span className="mx-0.5 text-muted">·</span><span className="text-primary">party</span>
         </button>
-        <div className="flex items-center gap-3 text-sm">
-          <span className="inline-flex items-center gap-1.5 text-neutral-400">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+        <div className="flex items-center gap-3 font-mono text-xs uppercase tracking-wider">
+          <span className="inline-flex items-center gap-1.5 text-muted">
+            <span className="h-2 w-2 bg-live shadow-[0_0_6px_var(--color-live)]" />
             {meta.viewers || 1} watching
           </span>
-          <button
-            onClick={() => setShowShare((s) => !s)}
-            className="rounded-lg border border-neutral-800 px-3 py-1.5 font-mono tracking-[0.3em] text-neutral-200 hover:border-neutral-600"
-          >
-            {roomId}
-          </button>
+          <div className="relative">
+            <button
+              onClick={copyCode}
+              className="border-2 border-border px-3 py-1.5 tracking-[0.2em] text-foreground hover:border-primary"
+            >
+              {roomId}
+            </button>
+            {copied && (
+              <span className="absolute right-0 top-full mt-2 whitespace-nowrap border-2 border-primary bg-surface-2 px-2.5 py-1 text-[11px] text-primary">
+                Copied code
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
-      {showShare && (
-        <div className="mb-4 flex items-center gap-4 rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
-          <div className="rounded-lg bg-white p-2">
-            {shareUrl && <QRCodeSVG value={shareUrl} size={92} />}
-          </div>
-          <div className="min-w-0">
-            <div className="text-sm font-medium">Invite friends</div>
-            <div className="mt-1 truncate text-xs text-neutral-400">{shareUrl}</div>
-            <button
-              onClick={() => navigator.clipboard?.writeText(shareUrl)}
-              className="mt-2 rounded-lg bg-neutral-800 px-3 py-1.5 text-xs hover:bg-neutral-700"
-            >
-              Copy link
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Video stage — native YouTube controls drive play/pause/scrub */}
-      <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-neutral-800 bg-black">
+      <div className="relative aspect-video w-full overflow-hidden border-2 border-border bg-black shadow-[0_0_40px_rgba(255,184,70,0.1)]">
         <div ref={containerRef} className="h-full w-full" />
 
         {!joined && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/80">
-            <p className="text-sm text-neutral-300">
-              {meta.videoId ? 'A video is playing in this room.' : 'No video loaded yet.'}
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/85">
+            <p className="font-mono text-sm uppercase tracking-wider text-foreground/90">
+              {meta.videoId ? 'Signal active in this room' : 'No signal loaded'}
             </p>
             <button
               onClick={() => setJoined(true)}
-              className="rounded-xl bg-rose-500 px-6 py-3 font-medium text-white hover:bg-rose-400"
+              className="border-2 border-primary bg-primary px-7 py-3 font-mono text-base font-bold uppercase tracking-wider text-background hover:bg-primary-hover"
             >
-              Join watch party
+              Tune in
             </button>
-            <p className="max-w-xs text-center text-xs text-neutral-500">
-              We need one tap to start playback in sync (browsers block autoplay otherwise).
-            </p>
           </div>
         )}
 
         {joined && !meta.videoId && (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-neutral-500">
-            Paste a YouTube link below to start.
+          <div className="absolute inset-0 flex items-center justify-center font-mono text-sm uppercase tracking-wider text-faint">
+            <span className="cursor-blink">Paste a link below to start</span>
           </div>
         )}
 
         {videoError && (
-          <div className="absolute inset-x-0 top-0 flex items-center justify-center gap-3 bg-rose-500/90 px-4 py-2 text-center text-sm text-white">
-            <span>{videoError}</span>
+          <div className="absolute inset-x-0 top-0 flex items-center justify-center gap-3 bg-accent/90 px-4 py-2 text-center font-mono text-sm text-background">
+            <span>! {videoError}</span>
             <button
               onClick={reloadVideo}
-              className="rounded-md bg-black/30 px-2 py-1 text-xs font-medium hover:bg-black/50"
+              className="border border-black/40 bg-black/30 px-2 py-1 text-xs font-bold uppercase text-foreground hover:bg-black/50"
             >
               Reload
             </button>
@@ -594,35 +581,30 @@ export function RoomClient({ roomId }: { roomId: string }) {
         {needsUnmute && (
           <button
             onClick={unmute}
-            className="absolute right-3 top-3 rounded-lg bg-black/70 px-3 py-1.5 text-xs text-white backdrop-blur hover:bg-black/90"
+            className="absolute right-3 top-3 border-2 border-primary/60 bg-black/70 px-3 py-1.5 font-mono text-xs uppercase text-primary backdrop-blur hover:border-primary"
           >
-            🔇 Tap to unmute
+            🔇 Unmute
           </button>
         )}
       </div>
 
       {/* Load a different video (no native control exists for this) */}
-      <form onSubmit={loadLink} className="mt-4 flex gap-2">
+      <form onSubmit={loadLink} className="mt-5 flex gap-2">
         <input
           value={linkInput}
           onChange={(e) => setLinkInput(e.target.value)}
-          placeholder="Paste a YouTube link to play something new…"
-          className="min-w-0 flex-1 rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-2.5 text-sm outline-none focus:border-rose-500"
+          placeholder="> paste a youtube link…"
+          className="min-w-0 flex-1 border-2 border-border bg-surface-2 px-4 py-3 font-mono text-base text-foreground outline-none placeholder:text-faint focus:border-primary"
         />
         <button
           type="submit"
-          className="rounded-xl border border-neutral-700 px-4 py-2.5 text-sm font-medium hover:border-neutral-500"
+          className="border-2 border-border-strong px-5 py-3 font-mono text-base font-bold uppercase tracking-wider hover:border-primary"
         >
           Load
         </button>
       </form>
 
-      {linkError && <p className="mt-2 text-xs text-rose-400">{linkError}</p>}
-
-      <div className="mt-4 text-center text-[11px] text-neutral-600">
-        {synced ? 'Synced to room clock' : 'Syncing clock…'} · Use the player’s own controls — everyone
-        stays in sync
-      </div>
+      {linkError && <p className="mt-2 font-mono text-sm text-accent">! {linkError}</p>}
     </main>
   );
 }

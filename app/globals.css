@@ -1,15 +1,122 @@
 @import "tailwindcss";
 
+/*
+ * "Phosphor Terminal" — green CRT/VHS aesthetic.
+ * Swap variants by editing these tokens only; utilities (bg-surface,
+ * text-primary, border-border, …) are generated from them by @theme.
+ */
+@theme {
+  --color-background: #0c0700; /* warm amber-black tube */
+  --color-surface: #160d03; /* raised panels */
+  --color-surface-2: #1d1305; /* inputs, wells */
+  --color-border: #3d2a0e; /* dim amber rule */
+  --color-border-strong: #5e4316;
+
+  --color-foreground: #ffb846; /* amber phosphor text */
+  --color-muted: #b07d2e; /* dim amber */
+  --color-faint: #785423; /* faded amber */
+
+  --color-primary: #ffcf6a; /* bright amber — buttons, accents */
+  --color-primary-hover: #ffe19a;
+  --color-accent: #ff5cc8; /* hot magenta — warnings / VHS pop */
+  --color-live: #ffcf6a; /* "watching" presence dot */
+
+  /* Typefaces — base variables injected by next/font in layout.tsx. */
+  --font-sans: var(--font-space-mono), ui-monospace, monospace;
+  --font-display: var(--font-vt323), ui-monospace, monospace;
+  --font-mono: var(--font-space-mono), ui-monospace, monospace;
+}
+
 :root {
   color-scheme: dark;
 }
 
+html {
+  font-size: 17px;
+}
+
 body {
-  background: #0a0a0f;
-  color: #ededed;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  position: relative;
+  background: var(--color-background);
+  /* Soft phosphor bloom from the centre of the tube. */
+  background-image: radial-gradient(70rem 44rem at 50% 30%, rgba(255, 184, 70, 0.08), transparent 70%);
+  background-attachment: fixed;
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* CRT screen-curvature vignette — darkened, rounded edges. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 120% at 50% 50%, transparent 60%, rgba(0, 0, 0, 0.65) 100%);
+}
+
+/* Scanlines + a gentle whole-screen flicker. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0,
+      rgba(0, 0, 0, 0) 2px,
+      rgba(0, 0, 0, 0.22) 3px,
+      rgba(0, 0, 0, 0.22) 3px
+    );
+  background-size: 100% 3px;
+  animation: crt-flicker 5s steps(60) infinite;
+}
+
+@keyframes crt-flicker {
+  0%,
+  97%,
+  100% {
+    opacity: 0.85;
+  }
+  98% {
+    opacity: 0.6;
+  }
+  99% {
+    opacity: 0.95;
+  }
+}
+
+/* Keep page content above the texture layers. */
+body > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Phosphor bloom on the pixel-display headings. */
+.font-display {
+  font-family: var(--font-display);
+  text-shadow: 0 0 8px rgba(255, 184, 70, 0.5);
+}
+
+/* Blinking terminal cursor. */
+.cursor-blink::after {
+  content: "▋";
+  margin-left: 0.1em;
+  animation: cursor-blink 1.1s steps(1) infinite;
+}
+@keyframes cursor-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
 }
 
 /* Range input — themed scrubber */
@@ -17,23 +124,23 @@ input[type="range"].scrubber {
   -webkit-appearance: none;
   appearance: none;
   height: 6px;
-  border-radius: 9999px;
-  background: #2a2a35;
+  border-radius: 0;
+  background: var(--color-surface-2);
   cursor: pointer;
 }
 input[type="range"].scrubber::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 9999px;
-  background: #f43f5e;
-  border: 2px solid #0a0a0f;
+  width: 14px;
+  height: 14px;
+  border-radius: 0;
+  background: var(--color-primary);
+  border: 2px solid var(--color-background);
 }
 input[type="range"].scrubber::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border: 2px solid #0a0a0f;
-  border-radius: 9999px;
-  background: #f43f5e;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--color-background);
+  border-radius: 0;
+  background: var(--color-primary);
 }
