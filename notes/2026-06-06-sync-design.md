@@ -36,7 +36,7 @@ Each client runs **one ordered tick** (`TICK_MS` ~100ms, plus an immediate call 
 The IFrame API has no seek event, so we poll `getCurrentTime()` and classify (`classifyCapture`):
 
 - A playhead jump beyond what playback could account for (`> SEEK_JUMP_S`, 2s) is a **seek** — it carries its own time and suppresses the play/pause flicker a scrub produces.
-- **Leaving the paused state upward** (`paused → buffering` or `paused → playing`) is a **play**. Capturing this on the *buffering* transition — not waiting for `playing` — is essential: pressing play on a stale paused video rebuffers first, and if we waited, the follower would re-pause that buffering before the play was ever observed. (This was the "press play doesn't start" bug.)
+- **A transition into `playing`** (from any non-playing phase) is a **play** — including the `paused → buffering → playing` a stale video produces, because buffering is frozen so the prior phase still reads as `paused`. We deliberately do **not** treat `paused → buffering` *itself* as a play: a follower correcting to a paused frame seeks, which momentarily buffers, and reading that as a play would broadcast a phantom play and un-pause the whole room. The "press play doesn't start" bug is prevented instead by the follower only ever force-pausing an *actually-playing* player (never a buffering one — see below), so a real play press survives buffering and is captured the moment it reaches `playing`.
 - A start from a cued/ended state into `playing` is a **play**.
 - `playing → paused` is a **pause**.
 

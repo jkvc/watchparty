@@ -54,6 +54,12 @@ export interface CaptureEvent {
  * mid-playback rebuffer produces `playing -> buffering -> playing`. With
  * buffering made transparent, the former reads as "left the paused state" (a
  * play) and the latter as "still playing" (nothing).
+ *
+ * Buffering itself is never a user action — only the eventual transition *into
+ * playing* is. We deliberately do NOT treat `paused -> buffering` as a play: a
+ * follower correcting to a paused frame seeks (which momentarily buffers), and
+ * reading that as a play would broadcast a phantom play and un-pause the room.
+ * The real play is still captured one tick later at `buffering -> playing`.
  */
 export function classifyCapture(
   prevPos: number,
@@ -66,12 +72,6 @@ export function classifyCapture(
   const expected = prevPos + (prevPhase === 'playing' ? dtSec : 0);
   if (Math.abs(curPos - expected) > seekJumpS) {
     return { kind: 'seek', positionSec: curPos };
-  }
-  // Leaving the paused state upward — including into buffering — is the viewer
-  // pressing play; capture it immediately so the follower doesn't re-pause the
-  // buffering it induced.
-  if (prevPhase === 'paused' && (curPhase === 'playing' || curPhase === 'buffering')) {
-    return { kind: 'play' };
   }
   if (curPhase === 'playing' && prevPhase !== 'playing') return { kind: 'play' };
   if (curPhase === 'paused' && prevPhase === 'playing') return { kind: 'pause' };

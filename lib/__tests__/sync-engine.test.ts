@@ -41,10 +41,11 @@ describe('classifyCapture', () => {
     expect(classifyCapture(50, 50, 0.1, 'paused', 'playing')).toEqual({ kind: 'play' });
   });
 
-  it('classifies paused -> buffering as play (the play press that rebuffers)', () => {
-    // Pressing play on a stale paused video buffers before it plays; capture it
-    // now so the follower does not re-pause the buffering it induced.
-    expect(classifyCapture(50, 50, 0.1, 'paused', 'buffering')).toEqual({ kind: 'play' });
+  it('does NOT treat paused -> buffering as a play (a paused-frame correction seek buffers)', () => {
+    // A follower seeking back to the paused frame momentarily buffers; reading
+    // that as a play would broadcast a phantom play and un-pause the room. The
+    // real play press is captured one tick later at buffering -> playing.
+    expect(classifyCapture(50, 50, 0.1, 'paused', 'buffering')).toEqual({ kind: 'none' });
   });
 
   it('classifies a cued -> playing start as play', () => {
