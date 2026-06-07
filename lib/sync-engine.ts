@@ -31,6 +31,62 @@ export const COMP_MAX_S = 3;
 export const SHORT_VIDEO_S = 60;
 /** Tolerance multiplier applied to short clips. */
 export const SHORT_VIDEO_TOL_MULT = 4;
+/**
+ * Offset from the clip end when parking on the last frame. YouTube's ENDED state
+ * often reports `getCurrentTime() === 0` (especially on mobile), and seeking to
+ * exactly `duration` can land past the last decodable frame and show a blank
+ * player.
+ */
+export const END_HOLD_OFFSET_S = 0.1;
+/**
+ * A paused position within this margin of the clip end is treated as "finished".
+ * The exact stored position when a video ends varies (the capture tick fires a
+ * fraction of a second before/after the real end, and YouTube rounds), so a
+ * generous margin is what makes the ended overlay show reliably on late join.
+ */
+export const END_NEAR_S = 2;
+
+// ─── End-of-video helpers ────────────────────────────────────────────────────
+
+/** Last holdable frame for a clip of the given duration. */
+export function endHoldPosition(durationSec: number): number {
+  return durationSec > 0 ? Math.max(0, durationSec - END_HOLD_OFFSET_S) : 0;
+}
+
+/** Whether a position is close enough to the clip end to count as finished. */
+export function isNearEnd(
+  positionSec: number,
+  durationSec: number,
+  marginSec: number = END_NEAR_S,
+): boolean {
+  return durationSec > 0 && positionSec >= durationSec - marginSec;
+}
+
+/**
+ * Resolve a trustworthy end-of-video position. At ENDED, some clients report
+ * `curPos === 0` even though playback finished — use the last sample (or the
+ * hold frame) instead of broadcasting a seek back to the start.
+ */
+export function resolveEndPosition(
+  curPos: number,
+  durationSec: number,
+  lastSamplePos: number,
+): number {
+  if (durationSec > 0) {
+    const hold = endHoldPosition(durationSec);
+    if (curPos < 1 && lastSamplePos > durationSec * 0.5) return hold;
+    return Math.min(Math.max(curPos, 0), hold);
+  }
+  // Duration not yet known (fresh loadVideoById): ENDED still reports curPos === 0.
+  if (curPos < 1 && lastSamplePos > 1) return lastSamplePos;
+  return Math.max(0, curPos);
+}
+
+/** Clamp a follower target so a playing anchor can't seek past the clip end. */
+export function clampTargetToDuration(targetSec: number, durationSec: number): number {
+  if (durationSec <= 0) return Math.max(0, targetSec);
+  return Math.min(Math.max(0, targetSec), endHoldPosition(durationSec));
+}
 
 // ─── Native-input capture ────────────────────────────────────────────────────
 

@@ -153,6 +153,14 @@ describe('applyControl', () => {
     expect(positionAt(s.anchor, 4000)).toBeCloseTo(4, 9);
   });
 
+  it('pause with positionSec parks at an explicit frame (end-of-video)', () => {
+    const playing: PlaybackState = { intentPlaying: true, anchor: playingAnchor(0, 0), videoId: 'x' };
+    const s = applyControl(playing, { type: 'pause', positionSec: 89.9 }, 90_000);
+    expect(s.intentPlaying).toBe(false);
+    expect(positionAt(s.anchor, 90_000)).toBeCloseTo(89.9, 6);
+    expect(positionAt(s.anchor, 99_999)).toBeCloseTo(89.9, 6);
+  });
+
   it('seek jumps to the target and keeps the play/pause state', () => {
     const playing: PlaybackState = { intentPlaying: true, anchor: playingAnchor(0, 0), videoId: 'x' };
     const s = applyControl(playing, { type: 'seek', positionSec: 100 }, 4000);
@@ -226,6 +234,7 @@ describe('isControlAction', () => {
   it('accepts well-formed actions', () => {
     expect(isControlAction({ type: 'play' })).toBe(true);
     expect(isControlAction({ type: 'pause' })).toBe(true);
+    expect(isControlAction({ type: 'pause', positionSec: 89.9 })).toBe(true);
     expect(isControlAction({ type: 'seek', positionSec: 12 })).toBe(true);
     expect(isControlAction({ type: 'load', videoId: 'abcDEF12345' })).toBe(true);
   });

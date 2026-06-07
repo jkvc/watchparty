@@ -152,7 +152,7 @@ export interface PlaybackState {
 
 export type ControlAction =
   | { type: 'play' }
-  | { type: 'pause' }
+  | { type: 'pause'; positionSec?: number }
   | { type: 'seek'; positionSec: number }
   | { type: 'load'; videoId: string };
 
@@ -161,8 +161,12 @@ export function isControlAction(x: unknown): x is ControlAction {
   const a = x as Record<string, unknown>;
   switch (a.type) {
     case 'play':
-    case 'pause':
       return true;
+    case 'pause':
+      return (
+        a.positionSec === undefined ||
+        (typeof a.positionSec === 'number' && Number.isFinite(a.positionSec))
+      );
     case 'seek':
       return typeof a.positionSec === 'number' && Number.isFinite(a.positionSec);
     case 'load':
@@ -213,12 +217,15 @@ export function applyControl(state: PlaybackState, action: ControlAction, now: n
         intentPlaying: true,
         anchor: deriveEffectiveAnchor(state.anchor, true, now),
       };
-    case 'pause':
+    case 'pause': {
+      const baseline =
+        action.positionSec != null ? pausedAnchor(now, action.positionSec) : state.anchor;
       return {
         ...state,
         intentPlaying: false,
-        anchor: deriveEffectiveAnchor(state.anchor, false, now),
+        anchor: deriveEffectiveAnchor(baseline, false, now),
       };
+    }
     case 'seek':
       // Override position; preserve the current play/pause intent.
       return {

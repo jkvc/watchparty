@@ -9,12 +9,50 @@ import {
   compensatedTarget,
   anchorAgrees,
   reconcileOptimistic,
+  endHoldPosition,
+  isNearEnd,
+  resolveEndPosition,
+  clampTargetToDuration,
   TOL_BASE_S,
   TOL_MAX_S,
   TOL_GROW_S,
   SHORT_VIDEO_TOL_MULT,
+  END_HOLD_OFFSET_S,
 } from '../sync-engine';
 import { playingAnchor, pausedAnchor } from '../room';
+
+describe('end-of-video helpers', () => {
+  it('parks slightly before the clip end', () => {
+    expect(endHoldPosition(212)).toBeCloseTo(212 - END_HOLD_OFFSET_S, 6);
+    expect(endHoldPosition(0)).toBe(0);
+  });
+
+  it('ignores a bogus zero at ENDED when the last sample was near the end', () => {
+    expect(resolveEndPosition(0, 120, 119.5)).toBeCloseTo(119.9, 6);
+  });
+
+  it('falls back to the last sample when duration is not yet known', () => {
+    expect(resolveEndPosition(0, 0, 90.09)).toBeCloseTo(90.09, 6);
+  });
+
+  it('trusts a normal end position', () => {
+    expect(resolveEndPosition(119.8, 120, 119.7)).toBeCloseTo(119.8, 6);
+  });
+
+  it('clamps follower targets to the hold frame', () => {
+    expect(clampTargetToDuration(500, 120)).toBeCloseTo(119.9, 6);
+    expect(clampTargetToDuration(50, 120)).toBe(50);
+    expect(clampTargetToDuration(50, 0)).toBe(50);
+  });
+
+  it('treats a position within the margin of the end as finished', () => {
+    // Real case: anchor parked at 89.841 on a 90s clip must count as ended.
+    expect(isNearEnd(89.841, 90)).toBe(true);
+    expect(isNearEnd(90, 90)).toBe(true);
+    expect(isNearEnd(85, 90)).toBe(false);
+    expect(isNearEnd(50, 0)).toBe(false); // unknown duration
+  });
+});
 
 describe('classifyCapture', () => {
   it('returns none when the playhead advances as expected while playing', () => {

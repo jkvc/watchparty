@@ -17,8 +17,11 @@ import {
   anchorAgrees,
   canSeek,
   classifyCapture,
+  clampTargetToDuration,
   compensatedTarget,
   effectiveTolerance,
+  endHoldPosition,
+  isNearEnd,
   nextTolerance,
   resetTolerance,
   scheduledStartDelayMs,
@@ -118,10 +121,16 @@ export function RoomClient({ roomId }: { roomId: string }) {
   // Autoplay fallback.
   const playTriedAtRef = useRef(0);
   const mutedFallbackRef = useRef(false);
+  // The video reached its natural end. We surface an explicit overlay rather
+  // than fight YouTube's ENDED state (pauseVideo is a no-op there, seekTo is
+  // unreliable, and reloading near the end can re-trigger ENDED — all of which
+  // left a confusing black stage).
+  const endedRef = useRef(false);
 
   const [joined, setJoined] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
   const [needsUnmute, setNeedsUnmute] = useState(false);
+  const [videoEnded, setVideoEnded] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
   const [linkInput, setLinkInput] = useState('');
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -212,11 +221,21 @@ export function RoomClient({ roomId }: { roomId: string }) {
       loadedVideoIdRef.current = meta.videoId;
       setVideoError(null);
       const anchor = getEffectiveAnchor(serverT, wallNow);
-      const startAt = anchor ? positionAt(anchor, serverT) : 0;
-      // A future-dated start is cued (not loaded) so it doesn't autoplay early —
-      // the scheduled-start hold below releases it on time.
-      const futureStart = anchor != null && isPlayingAnchor(anchor) && anchor.at > serverT;
-      if (anchor && isPlayingAnchor(anchor) && !futureStart) {
+      const rawStart = anchor ? positionAt(anchor, serverT) : 0;
+      const startAt =
+        player.getDuration() > 0
+          ? clampTargetToDuration(rawStart, player.getDuration())
+          : rawStart;
+      // Only an actively-playing, already-started anchor loads (autoplays). A
+      // future-dated start and ANY paused join are cued: cueing loads metadata
+      // (so getDuration works → near-end detection fires) and shows the poster
+      // instead of black, and crucially never autoplays *into* the clip end —
+      // loading at a near-end position made the player buffer the end forever
+      // (blank) or sit in a first-second replay loop on mobile.
+      const playingNow = anchor != null && isPlayingAnchor(anchor) && anchor.at <= serverT;
+      endedRef.current = false;
+      setVideoEnded(false);
+      if (playingNow) {
         player.loadVideoById(meta.videoId, startAt);
       } else {
         player.cueVideoById(meta.videoId, startAt);
@@ -233,7 +252,65 @@ export function RoomClient({ roomId }: { roomId: string }) {
       return;
     }
 
-    // 2. Always advance the playhead sample (even while settling) so the
+    if (!meta.videoId) return;
+
+    const duration = player.getDuration();
+    const settlingSeek = wallNow < seekSettleUntilRef.current;
+    const settlingState = wallNow < stateSettleUntilRef.current;
+
+    // 2. A remote viewer restarted a finished video: the room anchor is playing
+    //    again from the start. Force a fresh load (we're parked at ENDED, which
+    //    playVideo alone won't cleanly exit) and drop the ended overlay.
+    if (endedRef.current) {
+      const anchor = getEffectiveAnchor(serverT, wallNow);
+      if (anchor && isPlayingAnchor(anchor) && positionAt(anchor, serverT) < 2) {
+        endedRef.current = false;
+        setVideoEnded(false);
+        loadedVideoIdRef.current = null;
+        return;
+      }
+    }
+
+    // 3. Natural end-of-video. Handle BEFORE capture: at ENDED, YouTube reports
+    //    getCurrentTime() === 0 on some clients, which would otherwise classify
+    //    as a seek-to-start and loop the first half-second forever. We pause the
+    //    room and surface an explicit overlay instead of trying to render
+    //    YouTube's last frame (unreliable — see endedRef docs).
+    if (state === YT_STATE.ENDED) {
+      if (!endedRef.current) {
+        endedRef.current = true;
+        setVideoEnded(true);
+      }
+      lastSamplePhaseRef.current = 'paused';
+      if (meta.intentPlaying && !settlingState) {
+        const endPos = duration > 0 ? endHoldPosition(duration) : lastSampleTimeRef.current;
+        setOptimistic(pausedAnchor(serverT, endPos), wallNow);
+        void sendControlRef.current({ type: 'pause', positionSec: endPos }, serverT);
+      }
+      return;
+    }
+
+    // 4. Cued/paused at/after the clip end. A late join to a finished room cues
+    //    the video (see load branch) and the anchor sits at the end; there's no
+    //    ENDED event to catch, so detect it from the anchor and show the same
+    //    ended overlay rather than leaving a poster/blank with no affordance.
+    if (
+      duration > 0 &&
+      !meta.intentPlaying &&
+      !endedRef.current &&
+      state !== YT_STATE.PLAYING &&
+      state !== YT_STATE.BUFFERING
+    ) {
+      const anchor = getEffectiveAnchor(serverT, wallNow);
+      if (anchor && !isPlayingAnchor(anchor) && isNearEnd(positionAt(anchor, serverT), duration)) {
+        endedRef.current = true;
+        setVideoEnded(true);
+        lastSamplePhaseRef.current = 'paused';
+        return;
+      }
+    }
+
+    // 5. Always advance the playhead sample (even while settling) so the
     //    discontinuity test stays accurate and our own commands never read back
     //    as a jump once the settle window lifts.
     const dt = (wallNow - lastSampleAtRef.current) / 1000;
@@ -251,24 +328,12 @@ export function RoomClient({ roomId }: { roomId: string }) {
     // apart from a mid-playback rebuffer (playing→buffering→playing).
     if (phase !== 'buffering') lastSamplePhaseRef.current = phase;
 
-    if (!meta.videoId) return;
-
-    const settlingSeek = wallNow < seekSettleUntilRef.current;
-    const settlingState = wallNow < stateSettleUntilRef.current;
-
-    // 3. Capture the viewer's native action and broadcast it. Each kind is
+    // 6. Capture the viewer's native action and broadcast it. Each kind is
     //    suppressed only while OUR matching command is still settling, so a
     //    settling seek can't swallow a genuine play/pause the viewer makes in
     //    the same instant. A captured action returns immediately so the follower
     //    below never fights it; the optimistic anchor holds until the server
     //    echoes back.
-    if (state === YT_STATE.ENDED && meta.intentPlaying) {
-      if (!settlingState) {
-        setOptimistic(pausedAnchor(serverT, curPos), wallNow);
-        void sendControlRef.current({ type: 'pause' }, serverT);
-      }
-      return;
-    }
     if (event.kind === 'seek') {
       if (!settlingSeek) {
         const pos = event.positionSec ?? curPos;
@@ -299,7 +364,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     // yet — let the player finish reacting to it.
     if (settlingSeek || settlingState) return;
 
-    // 4. Follow the room anchor (drift correction + play/pause state).
+    // 7. Follow the room anchor (drift correction + play/pause state).
     const anchor = getEffectiveAnchor(serverT, wallNow);
     if (!anchor) return;
 
@@ -313,9 +378,8 @@ export function RoomClient({ roomId }: { roomId: string }) {
     }
 
     const targetPlaying = isPlayingAnchor(anchor);
-    const rawTarget = positionAt(anchor, serverT);
+    const rawTarget = clampTargetToDuration(positionAt(anchor, serverT), duration);
     const settled = phase !== 'buffering' && state !== YT_STATE.UNSTARTED;
-    const duration = player.getDuration();
 
     // Scheduled synchronized start: while a playing anchor's start is still in
     // the future, hold the player paused at 0 and release it exactly `lead` ms
@@ -417,14 +481,20 @@ export function RoomClient({ roomId }: { roomId: string }) {
 
   // ─── Create the player on join ─────────────────────────────────────────────
   useEffect(() => {
-    if (!joined || !containerRef.current || playerRef.current) return;
-    let cancelled = false;
+    if (!joined || !containerRef.current) return;
 
-    loadYouTubeAPI().then((YT) => {
+    let cancelled = false;
+    let player: YTPlayer | null = null;
+
+    void loadYouTubeAPI().then((YT) => {
       if (cancelled || !containerRef.current) return;
+
+      containerRef.current.replaceChildren();
       const host = document.createElement('div');
+      host.className = 'h-full w-full';
       containerRef.current.appendChild(host);
-      playerRef.current = new YT.Player(host, {
+
+      player = new YT.Player(host, {
         width: '100%',
         height: '100%',
         playerVars: {
@@ -435,17 +505,37 @@ export function RoomClient({ roomId }: { roomId: string }) {
           iv_load_policy: 3,
         },
         events: {
-          onReady: () => setPlayerReady(true),
-          onError: (e) => setVideoError(youtubeErrorMessage(e.data)),
+          onReady: () => {
+            if (cancelled) return;
+            playerRef.current = player;
+            setPlayerReady(true);
+          },
+          onError: (e) => {
+            if (cancelled) return;
+            setVideoError(youtubeErrorMessage(e.data));
+          },
           // Immediate reaction to a native state change; the 100ms poll catches
           // scrubs and anything between transitions.
-          onStateChange: () => tickRef.current(),
+          onStateChange: () => {
+            if (cancelled) return;
+            tickRef.current();
+          },
         },
       });
     });
 
     return () => {
       cancelled = true;
+      setPlayerReady(false);
+      playerRef.current = null;
+      loadedVideoIdRef.current = null;
+      endedRef.current = false;
+      try {
+        player?.destroy();
+      } catch {
+        // destroy() can throw if React already tore down the iframe node.
+      }
+      containerRef.current?.replaceChildren();
     };
   }, [joined]);
 
@@ -502,6 +592,40 @@ export function RoomClient({ roomId }: { roomId: string }) {
   const reloadVideo = () => {
     setVideoError(null);
     loadedVideoIdRef.current = null; // force the correction loop to re-load
+    endedRef.current = false;
+    setVideoEnded(false);
+  };
+
+  // Restart a finished video for the whole room: a fresh `load` re-anchors a
+  // scheduled play from the start so every viewer replays in sync.
+  const replay = () => {
+    const videoId = snapshotRef.current.meta.videoId;
+    if (!videoId) return;
+    const wallNow = Date.now();
+    const serverT = serverNowRef.current();
+    endedRef.current = false;
+    setVideoEnded(false);
+    mutedFallbackRef.current = false;
+    setNeedsUnmute(false);
+    const player = playerRef.current;
+    if (player) {
+      // Drive the load directly from this click so it counts as a user gesture
+      // (unmuted autoplay is allowed) and starts at 0 — relying on the tick to
+      // reload would use the stale past-end anchor and re-trigger the ended
+      // overlay, and the deferred autoplay would be blocked + muted.
+      loadedVideoIdRef.current = videoId;
+      playTriedAtRef.current = 0;
+      player.loadVideoById(videoId, 0);
+      lastSampleTimeRef.current = 0;
+      lastSampleAtRef.current = wallNow;
+      lastSamplePhaseRef.current = 'buffering';
+      setOptimistic(playingAnchor(serverT, 0), wallNow);
+      settle(wallNow, LOAD_SETTLE_MS, 'both');
+    } else {
+      loadedVideoIdRef.current = null;
+    }
+    // Broadcast so every other viewer restarts in sync.
+    void sendControl({ type: 'load', videoId }, serverT);
   };
 
   const unmute = () => {
@@ -568,6 +692,20 @@ export function RoomClient({ roomId }: { roomId: string }) {
         {joined && !meta.videoId && (
           <div className="absolute inset-0 flex items-center justify-center font-mono text-sm uppercase tracking-wider text-faint">
             <span className="cursor-blink">Paste a link below to start</span>
+          </div>
+        )}
+
+        {joined && meta.videoId && videoEnded && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/90">
+            <p className="font-mono text-sm uppercase tracking-wider text-foreground/90">
+              Signal ended
+            </p>
+            <button
+              onClick={replay}
+              className="border-2 border-primary bg-primary px-7 py-3 font-mono text-base font-bold uppercase tracking-wider text-background hover:bg-primary-hover"
+            >
+              ▶ Replay from start
+            </button>
           </div>
         )}
 

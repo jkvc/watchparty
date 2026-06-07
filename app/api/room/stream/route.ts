@@ -21,23 +21,65 @@ export async function GET(request: NextRequest) {
   const encoder = new TextEncoder();
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let unsubscribe: (() => void) | undefined;
+  let closed = false;
 
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (data: unknown) =>
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      const cleanup = () => {
+        if (closed) return;
+        closed = true;
+        if (heartbeat) {
+          clearInterval(heartbeat);
+          heartbeat = undefined;
+        }
+        const unsub = unsubscribe;
+        unsubscribe = undefined;
+        unsub?.();
+      };
+
+      const send = (data: unknown) => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          cleanup();
+        }
+      };
+
+      request.signal.addEventListener('abort', cleanup, { once: true });
 
       // Push the current snapshot immediately so a fresh client syncs at once.
+      if (request.signal.aborted) {
+        cleanup();
+        return;
+      }
       send(await server.buildSnapshot(roomId));
 
+      if (request.signal.aborted) {
+        cleanup();
+        return;
+      }
       unsubscribe = await server.subscribe(roomId, (snapshot) => send(snapshot));
 
       // Comment heartbeat keeps intermediaries from closing an idle stream.
-      heartbeat = setInterval(() => controller.enqueue(encoder.encode(': ping\n\n')), 30_000);
+      heartbeat = setInterval(() => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(': ping\n\n'));
+        } catch {
+          cleanup();
+        }
+      }, 30_000);
     },
     cancel() {
-      if (heartbeat) clearInterval(heartbeat);
-      unsubscribe?.();
+      closed = true;
+      if (heartbeat) {
+        clearInterval(heartbeat);
+        heartbeat = undefined;
+      }
+      const unsub = unsubscribe;
+      unsubscribe = undefined;
+      unsub?.();
     },
   });
 

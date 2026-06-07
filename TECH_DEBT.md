@@ -4,6 +4,9 @@ Known shortcuts and deferred work. Record every conscious shortcut here; delete 
 
 ## Active
 
+### End-of-video is an explicit overlay, and paused joins show the poster
+We do not try to render YouTube's last frame at the natural end of a clip — `pauseVideo()` is a no-op in the `ENDED` state, `seekTo()` is unreliable there, and reloading near the end re-triggers `ENDED` (which produced black stages and a first-second replay loop, especially on mobile). Instead the follower detects the end (`state === ENDED`, or a paused anchor within `END_NEAR_S` of the duration via `isNearEnd`) and shows an opaque "Signal ended" overlay with a Replay button; Replay drives a `load`-from-0 directly in the click handler (user gesture → unmuted autoplay) and broadcasts `load` so the whole room restarts in sync. Relatedly, late joins to a *paused* room `cueVideoById` rather than `loadVideoById`: cueing loads metadata (so `getDuration()` works for near-end detection) and shows the poster instead of autoplaying *into* the clip end. Consequence: tuning into a room paused mid-video shows the poster thumbnail, not the exact paused frame, until playback resumes. Acceptable for v1; rendering the exact frame would require a brief programmatic play→pause that risks the autoplay-mute fallback.
+
 ### Control transport is POST + SSE, not a WebSocket
 Native controls broadcast via a `fetch` POST to `/api/room/control`, and updates fan out over an SSE stream (`/api/room/stream`). That's a fresh request per control plus server-side recompute and SSE buffering — higher latency than a persistent socket. An optimistic local anchor hides the round-trip for the acting viewer, but cross-viewer propagation still pays it. A bidirectional WebSocket (`ws`/`socket.io`) over the existing Redis pub/sub would be lowest-latency for both directions. Deferred for v1; the optimistic anchor makes it good enough.
 
