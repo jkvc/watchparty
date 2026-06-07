@@ -20,7 +20,7 @@ export function Entrance({ notFoundId }: { notFoundId: string | null }) {
       const res = await fetch('/api/room', { method: 'POST' });
       const data = (await res.json()) as { roomId?: string; error?: string };
       if (!res.ok || !data.roomId) throw new Error(data.error ?? 'Failed to create room');
-      router.push(`/room/${data.roomId}`);
+      router.push(`/${data.roomId}`);
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);
@@ -39,7 +39,7 @@ export function Entrance({ notFoundId }: { notFoundId: string | null }) {
     try {
       const res = await fetch(`/api/room/${id}`);
       if (res.status === 200) {
-        router.push(`/room/${id}`);
+        router.push(`/${id}`);
         return;
       }
       setError(`Room ${id} doesn't exist or has expired.`);

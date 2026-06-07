@@ -52,8 +52,8 @@ lib/
   room-server.ts  Clients map, viewer-count recompute + publish, sliding TTL.
 app/
   page.tsx                 Entrance: create room / join by code.
-  room/[id]/page.tsx       Room shell (server) — 404s unknown rooms.
-  room/[id]/room-client.tsx  YT IFrame player (native controls) + capture/correction loops.
+  [id]/page.tsx            Room shell (server) — 404s unknown rooms.
+  [id]/room-client.tsx     YT IFrame player (native controls) + capture/correction loops.
   api/
     clock/         Authoritative server time for clock sync.
     room/          create (POST), exists (GET /[id]), control, presence,
