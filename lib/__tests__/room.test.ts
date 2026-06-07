@@ -15,8 +15,10 @@ import {
   positionAt,
   deriveEffectiveAnchor,
   applyControl,
+  clampStamp,
   countActiveViewers,
   isControlAction,
+  MAX_CONTROL_SKEW_MS,
   type PlaybackState,
   type ClientStatus,
 } from '@/lib/room';
@@ -176,6 +178,25 @@ describe('applyControl', () => {
     expect(positionAt(s.anchor, now + SCHEDULED_START_LEAD_MS)).toBe(0);
     // Then it advances normally.
     expect(positionAt(s.anchor, now + SCHEDULED_START_LEAD_MS + 1000)).toBeCloseTo(1, 9);
+  });
+});
+
+describe('clampStamp', () => {
+  const serverNow = 1_000_000;
+
+  it('trusts a client stamp within the skew window (so the anchor matches optimistic)', () => {
+    expect(clampStamp(serverNow - 120, serverNow)).toBe(serverNow - 120);
+    expect(clampStamp(serverNow + 50, serverNow)).toBe(serverNow + 50);
+  });
+
+  it('pulls an out-of-window stamp to the nearest bound', () => {
+    expect(clampStamp(serverNow - 10_000, serverNow)).toBe(serverNow - MAX_CONTROL_SKEW_MS);
+    expect(clampStamp(serverNow + 10_000, serverNow)).toBe(serverNow + MAX_CONTROL_SKEW_MS);
+  });
+
+  it('falls back to the server clock for a non-finite stamp', () => {
+    expect(clampStamp(NaN, serverNow)).toBe(serverNow);
+    expect(clampStamp(Infinity, serverNow)).toBe(serverNow);
   });
 });
 

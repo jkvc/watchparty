@@ -4,10 +4,16 @@ import { applyControlAndPublish, roomExists } from '@/lib/room-server';
 
 export const dynamic = 'force-dynamic';
 
-// POST { roomId, action } — apply a play/pause/seek/load control to the room.
+// POST { roomId, action, atServerMs? } — apply a play/pause/seek/load control.
+// `atServerMs` is the acting client's synced server-clock time, used to stamp the
+// anchor so it matches the client's optimistic one (server clamps it).
 export async function POST(request: NextRequest) {
   try {
-    const { roomId, action } = (await request.json()) as { roomId?: unknown; action?: unknown };
+    const { roomId, action, atServerMs } = (await request.json()) as {
+      roomId?: unknown;
+      action?: unknown;
+      atServerMs?: unknown;
+    };
     if (typeof roomId !== 'string' || !isValidRoomId(roomId)) {
       return Response.json({ error: 'Invalid room id' }, { status: 400 });
     }
@@ -18,7 +24,7 @@ export async function POST(request: NextRequest) {
     if (!(await roomExists(id))) {
       return Response.json({ error: 'Room not found' }, { status: 404 });
     }
-    await applyControlAndPublish(id, action);
+    await applyControlAndPublish(id, action, typeof atServerMs === 'number' ? atServerMs : undefined);
     return Response.json({ ok: true });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 500 });

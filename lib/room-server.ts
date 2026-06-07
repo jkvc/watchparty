@@ -15,6 +15,7 @@ import {
   ROOM_TTL_SECONDS,
   pausedAnchor,
   applyControl,
+  clampStamp,
   countActiveViewers,
   generateRoomId,
   type VideoAnchor,
@@ -164,14 +165,28 @@ async function recomputeViewers(
 
 // ─── Public operations ───────────────────────────────────────────────────────
 
-/** Apply a play/pause/seek/load control and broadcast. */
-export async function applyControlAndPublish(roomId: string, action: ControlAction): Promise<void> {
+/**
+ * Apply a play/pause/seek/load control and broadcast.
+ *
+ * `atClientMs` is the acting client's own `serverNow()` at the moment it acted.
+ * We stamp the resulting anchor with that (clamped) time rather than the server's
+ * processing time, so the stored/broadcast anchor is identical to the anchor the
+ * client already applied optimistically — no ~one-RTT offset between the actor
+ * and everyone following the anchor. Server time is still used for presence and
+ * TTL bookkeeping.
+ */
+export async function applyControlAndPublish(
+  roomId: string,
+  action: ControlAction,
+  atClientMs?: number,
+): Promise<void> {
   const server = getSyncServer();
   const now = Date.now();
+  const stampedAt = clampStamp(atClientMs ?? now, now);
   const clients = await readClients(roomId, now);
   const { state } = await loadRoom(roomId, now);
 
-  const next = applyControl(state, action, now);
+  const next = applyControl(state, action, stampedAt);
 
   await server.setAnchor(roomId, VIDEO_CHANNEL, next.anchor);
   await server.patchMeta(roomId, {

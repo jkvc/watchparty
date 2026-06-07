@@ -175,11 +175,13 @@ export function RoomClient({ roomId }: { roomId: string }) {
   }, []);
 
   const sendControl = useCallback(
-    async (action: ControlAction) => {
+    async (action: ControlAction, atServerMs: number) => {
+      // Stamp the control with our synced server clock so the server stores the
+      // SAME anchor we just applied optimistically — no actor-vs-follower offset.
       await fetch('/api/room/control', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId, action }),
+        body: JSON.stringify({ roomId, action, atServerMs }),
       });
     },
     [roomId],
@@ -260,7 +262,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     if (state === YT_STATE.ENDED && meta.intentPlaying) {
       if (!settlingState) {
         setOptimistic(pausedAnchor(serverT, curPos), wallNow);
-        void sendControlRef.current({ type: 'pause' });
+        void sendControlRef.current({ type: 'pause' }, serverT);
       }
       return;
     }
@@ -271,21 +273,21 @@ export function RoomClient({ roomId }: { roomId: string }) {
           meta.intentPlaying ? playingAnchor(serverT, pos) : pausedAnchor(serverT, pos),
           wallNow,
         );
-        void sendControlRef.current({ type: 'seek', positionSec: pos });
+        void sendControlRef.current({ type: 'seek', positionSec: pos }, serverT);
       }
       return;
     }
     if (event.kind === 'play' && !meta.intentPlaying) {
       if (!settlingState) {
         setOptimistic(playingAnchor(serverT, curPos), wallNow);
-        void sendControlRef.current({ type: 'play' });
+        void sendControlRef.current({ type: 'play' }, serverT);
       }
       return;
     }
     if (event.kind === 'pause' && meta.intentPlaying) {
       if (!settlingState) {
         setOptimistic(pausedAnchor(serverT, curPos), wallNow);
-        void sendControlRef.current({ type: 'pause' });
+        void sendControlRef.current({ type: 'pause' }, serverT);
       }
       return;
     }
@@ -361,11 +363,14 @@ export function RoomClient({ roomId }: { roomId: string }) {
         }
         forceCorrectRef.current = false;
       } else if (Math.abs(curPos - rawTarget) > PAUSED_TOL_S && safeSeek(player, rawTarget, phase)) {
+        // Seek the still-running follower back to the paused frame, but DON'T
+        // return — fall through to the pause enforcement below. Returning here
+        // (the old behaviour) left the player PLAYING, so it ran past the frame,
+        // got seeked back, ran again… a sub-second loop that never paused.
         lastSampleTimeRef.current = rawTarget;
         lastSampleAtRef.current = wallNow;
         forceCorrectRef.current = false;
         settle(wallNow, SEEK_SETTLE_MS, 'seek');
-        return;
       } else {
         forceCorrectRef.current = false;
       }
@@ -488,7 +493,7 @@ export function RoomClient({ roomId }: { roomId: string }) {
     }
     setLinkError(null);
     setLinkInput('');
-    void sendControl({ type: 'load', videoId });
+    void sendControl({ type: 'load', videoId }, serverNowRef.current());
   };
 
   const reloadVideo = () => {

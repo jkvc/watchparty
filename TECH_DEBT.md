@@ -13,6 +13,9 @@ The IFrame API has no seek event, so a single loop (`TICK_MS` ~100ms) polls `get
 ### Ad time is opaque (self-heal, not detected)
 The IFrame API does not expose whether an ad is playing. We no longer try to detect ads or gate the room; instead a stalled/ad viewer falls behind and the drift-correction loop snaps them to live when their content clock resumes. Ad-specific handling is skipping corrections while the player reports `BUFFERING`/`UNSTARTED`, plus a hard `canSeek`/`safeSeek` invariant that drops *any* seek while buffering. A viewer stuck on a long ad simply stays behind until the ad ends and then self-heals, rather than seek-storming.
 
+### Sync floor is the tolerance band, not exact (~100ms on late join)
+The anchor is the shared truth, but the playing-drift loop only re-seeks once drift exceeds `TOL_BASE_S` (0.4s, growing), so every player free-runs *inside* that band rather than sitting exactly on the anchor. A fresh joiner snaps exactly onto the anchor while an established player is mid-band, so they can read ~100ms apart — below tolerance, so the loop never closes it (keyframe snapping on the first load adds to this). Imperceptible for watching together, so accepted for v1. Closing it means either tightening `TOL_BASE_S` (risks seek-storms on jittery networks — the reason the growing tolerance exists) or speed-nudge smoothing via `@syncframe/core`'s `useSmoothedValue` (glide into sync by briefly running off-1x instead of seeking), which pairs naturally with the deferred playback-rate sync below.
+
 ### No playback-rate sync (fixed 1x)
 v1 intentionally syncs only play / pause / seek / load. The anchor model already supports arbitrary `ratePerMs`, so adding speed control is a small follow-up, but it's out of scope for now.
 

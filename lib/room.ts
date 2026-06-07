@@ -44,6 +44,15 @@ export const CLIENT_STALE_MS = 15_000;
  */
 export const SCHEDULED_START_LEAD_MS = 1_800;
 
+/**
+ * How far a client-authored control timestamp may sit from the server's own
+ * clock before we distrust it. Controls carry the acting client's `serverNow()`
+ * so the resulting anchor matches what that client already applied optimistically
+ * (eliminating the ~one-RTT offset a server re-stamp would introduce). The clamp
+ * bounds abuse/clock-bugs: a client can shift the shared timeline by at most this.
+ */
+export const MAX_CONTROL_SKEW_MS = 3_000;
+
 // ─── Room ids ────────────────────────────────────────────────────────────────
 
 export function generateRoomId(rng: () => number = Math.random): string {
@@ -177,6 +186,22 @@ export function deriveEffectiveAnchor(
 ): VideoAnchor {
   const pos = positionAt(baseline, now);
   return intentPlaying ? playingAnchor(now, pos) : pausedAnchor(now, pos);
+}
+
+/**
+ * Clamp a client-authored control timestamp into a trusted window around the
+ * server's clock. A finite stamp within `maxSkewMs` is used as-is so the stored
+ * anchor matches the client's optimistic one; anything further (or non-finite)
+ * is pulled to the nearest bound, capping how far a bad client can move the
+ * shared timeline.
+ */
+export function clampStamp(
+  clientAtMs: number,
+  serverNowMs: number,
+  maxSkewMs: number = MAX_CONTROL_SKEW_MS,
+): number {
+  if (!Number.isFinite(clientAtMs)) return serverNowMs;
+  return Math.min(Math.max(clientAtMs, serverNowMs - maxSkewMs), serverNowMs + maxSkewMs);
 }
 
 /** Apply a user control action, producing the next playback state. */
