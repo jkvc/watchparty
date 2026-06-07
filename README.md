@@ -1,6 +1,12 @@
 # watchparty
 
+**Watch YouTube together, perfectly in sync, with just a browser.**
+
 A YouTube watch-party for browsers. Share a 4-character room code, paste a YouTube link, and everyone watches in lockstep — play, pause, and scrub stay synced across every viewer, on any device.
+
+**Live at [watchparty.jkvc.ai](https://watchparty.jkvc.ai/).**
+
+![watchparty](docs/screenshot.png)
 
 Built on [Next.js](https://nextjs.org), the [`@syncframe`](https://www.npmjs.com/package/@syncframe/core) anchor-based dead-reckoning sync protocol, and Redis.
 
