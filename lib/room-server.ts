@@ -116,11 +116,28 @@ async function loadRoom(roomId: string, now: number): Promise<LoadedRoom> {
 
 /**
  * Garbage-collect a client from the hash after this long without a heartbeat.
- * Deliberately more generous than `CLIENT_STALE_MS` (the presence/gate window in
- * `computeGate`): GC is cleanup, the gate decides liveness. A client aged
- * between the two thresholds is kept in the hash but ignored by the gate.
+ * Deliberately more generous than `CLIENT_STALE_MS` (the viewer-count freshness
+ * window in `countActiveViewers`): GC is just cleanup, the viewer count decides
+ * liveness. A client aged between the two thresholds stays in the hash but no
+ * longer counts as watching.
  */
 const CLIENT_GC_MS = 60_000;
+
+/**
+ * Parse a stored heartbeat value into its `lastSeen` epoch-ms. Heartbeats are
+ * stored as a bare number string; a legacy `{ "lastSeen": n }` JSON value is
+ * still accepted so the viewer count never blips while old entries age out.
+ */
+function parseLastSeen(value: string): number | null {
+  const n = Number(value);
+  if (Number.isFinite(n) && value.trim() !== '') return n;
+  try {
+    const parsed = JSON.parse(value) as { lastSeen?: unknown };
+    return typeof parsed.lastSeen === 'number' ? parsed.lastSeen : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Read the live clients map, deleting anyone past the GC window. */
 async function readClients(roomId: string, now: number): Promise<Record<string, ClientStatus>> {
@@ -128,14 +145,10 @@ async function readClients(roomId: string, now: number): Promise<Record<string, 
   const raw = await redis.hgetall(clientsKey(roomId));
   const out: Record<string, ClientStatus> = {};
   const dead: string[] = [];
-  for (const [id, json] of Object.entries(raw)) {
-    try {
-      const status = JSON.parse(json) as ClientStatus;
-      if (now - status.lastSeen > CLIENT_GC_MS) dead.push(id);
-      else out[id] = status;
-    } catch {
-      dead.push(id);
-    }
+  for (const [id, value] of Object.entries(raw)) {
+    const lastSeen = parseLastSeen(value);
+    if (lastSeen === null || now - lastSeen > CLIENT_GC_MS) dead.push(id);
+    else out[id] = { lastSeen };
   }
   if (dead.length) await redis.hdel(clientsKey(roomId), ...dead);
   return out;
@@ -154,7 +167,7 @@ async function recomputeViewers(
   force: boolean,
 ): Promise<void> {
   const server = getSyncServer();
-  const { meta } = await loadRoom(roomId, now);
+  const meta = await server.getMeta(roomId);
   const viewers = countActiveViewers(clients, now);
 
   await server.patchMeta(roomId, { viewers });
@@ -202,9 +215,8 @@ export async function applyControlAndPublish(
 export async function heartbeatAndPublish(roomId: string, clientId: string): Promise<void> {
   const now = Date.now();
   const clients = await readClients(roomId, now);
-  const status: ClientStatus = { lastSeen: now };
-  await getRedis().hset(clientsKey(roomId), clientId, JSON.stringify(status));
-  clients[clientId] = status;
+  await getRedis().hset(clientsKey(roomId), clientId, String(now));
+  clients[clientId] = { lastSeen: now };
   await recomputeViewers(roomId, clients, now, false);
 }
 

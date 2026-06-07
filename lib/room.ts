@@ -142,7 +142,7 @@ export function positionAt(anchor: VideoAnchor, now: number): number {
 // ─── Playback state + control reducer ────────────────────────────────────────
 
 export interface PlaybackState {
-  /** Does the room *want* to be playing? (The gate can still freeze it.) */
+  /** Whether the room intends to be playing — pure play/pause intent. */
   intentPlaying: boolean;
   /** Effective position anchor — the single source of truth for where we are. */
   anchor: VideoAnchor;
