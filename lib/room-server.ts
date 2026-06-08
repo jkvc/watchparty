@@ -9,7 +9,7 @@
  */
 
 import { getRedis } from '@/lib/redis';
-import { getSyncServer, WP_PREFIX } from '@/lib/sync';
+import { getSyncServerForRoom, WP_PREFIX } from '@/lib/sync';
 import {
   VIDEO_CHANNEL,
   ROOM_TTL_SECONDS,
@@ -64,7 +64,6 @@ const MAX_ID_ATTEMPTS = 8;
 /** Create a fresh room with a unique code. Returns the code, or null on collision exhaustion. */
 export async function createRoom(): Promise<string | null> {
   const redis = getRedis();
-  const server = getSyncServer();
   const now = Date.now();
 
   let roomId: string | null = null;
@@ -79,8 +78,9 @@ export async function createRoom(): Promise<string | null> {
   }
   if (!roomId) return null;
 
-  await server.setAnchor(roomId, VIDEO_CHANNEL, pausedAnchor(now, 0));
-  await server.patchMeta(roomId, {
+  const server = getSyncServerForRoom(roomId);
+  await server.setAnchor(VIDEO_CHANNEL, pausedAnchor(now, 0));
+  await server.patchMeta({
     videoId: null,
     intentPlaying: false,
     viewers: 0,
@@ -101,10 +101,10 @@ interface LoadedRoom {
 }
 
 async function loadRoom(roomId: string, now: number): Promise<LoadedRoom> {
-  const server = getSyncServer();
+  const server = getSyncServerForRoom(roomId);
   const [anchorRaw, meta] = await Promise.all([
-    server.getAnchor(roomId, VIDEO_CHANNEL),
-    server.getMeta(roomId),
+    server.getAnchor(VIDEO_CHANNEL),
+    server.getMeta(),
   ]);
   const state: PlaybackState = {
     intentPlaying: meta.intentPlaying === true,
@@ -166,14 +166,14 @@ async function recomputeViewers(
   now: number,
   force: boolean,
 ): Promise<void> {
-  const server = getSyncServer();
-  const meta = await server.getMeta(roomId);
+  const server = getSyncServerForRoom(roomId);
+  const meta = await server.getMeta();
   const viewers = countActiveViewers(clients, now);
 
-  await server.patchMeta(roomId, { viewers });
+  await server.patchMeta({ viewers });
   await touchRoom(roomId);
 
-  if (force || meta.viewers !== viewers) await server.publishUpdate(roomId);
+  if (force || meta.viewers !== viewers) await server.publishUpdate();
 }
 
 // ─── Public operations ───────────────────────────────────────────────────────
@@ -193,7 +193,7 @@ export async function applyControlAndPublish(
   action: ControlAction,
   atClientMs?: number,
 ): Promise<void> {
-  const server = getSyncServer();
+  const server = getSyncServerForRoom(roomId);
   const now = Date.now();
   const stampedAt = clampStamp(atClientMs ?? now, now);
   const clients = await readClients(roomId, now);
@@ -201,14 +201,14 @@ export async function applyControlAndPublish(
 
   const next = applyControl(state, action, stampedAt);
 
-  await server.setAnchor(roomId, VIDEO_CHANNEL, next.anchor);
-  await server.patchMeta(roomId, {
+  await server.setAnchor(VIDEO_CHANNEL, next.anchor);
+  await server.patchMeta({
     videoId: next.videoId,
     intentPlaying: next.intentPlaying,
     viewers: countActiveViewers(clients, now),
   });
   await touchRoom(roomId);
-  await server.publishUpdate(roomId);
+  await server.publishUpdate();
 }
 
 /** Record a presence heartbeat, then republish if the viewer count changed. */

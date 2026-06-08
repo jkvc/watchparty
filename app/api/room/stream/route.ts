@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import { isValidRoomId, normalizeRoomId } from '@/lib/room';
-import { getSyncServer } from '@/lib/sync';
+import { isValidRoomId, normalizeRoomId, VIDEO_CHANNEL, pausedAnchor } from '@/lib/room';
+import { getSyncServerForRoom } from '@/lib/sync';
 import { roomExists } from '@/lib/room-server';
 
 export const dynamic = 'force-dynamic';
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     return new Response('Room not found', { status: 404 });
   }
 
-  const server = getSyncServer();
+  const server = getSyncServerForRoom(roomId);
   const encoder = new TextEncoder();
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let unsubscribe: (() => void) | undefined;
@@ -48,20 +48,20 @@ export async function GET(request: NextRequest) {
 
       request.signal.addEventListener('abort', cleanup, { once: true });
 
-      // Push the current snapshot immediately so a fresh client syncs at once.
       if (request.signal.aborted) {
         cleanup();
         return;
       }
-      send(await server.buildSnapshot(roomId));
+
+      await server.ensureAnchor(VIDEO_CHANNEL, () => pausedAnchor(Date.now(), 0));
+      send(await server.buildSnapshot());
 
       if (request.signal.aborted) {
         cleanup();
         return;
       }
-      unsubscribe = await server.subscribe(roomId, (snapshot) => send(snapshot));
+      unsubscribe = await server.subscribe((snapshot) => send(snapshot));
 
-      // Comment heartbeat keeps intermediaries from closing an idle stream.
       heartbeat = setInterval(() => {
         if (closed) return;
         try {

@@ -15,8 +15,8 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@syncframe/core": "^0.2.2",
-    "@syncframe/redis": "^0.2.0",
+    "@syncframe/core": "^0.3.0",
+    "@syncframe/redis": "^0.3.0",
     "ioredis": "^5.11.1",
     "next": "16.1.6",
     "qrcode.react": "^4.2.0",

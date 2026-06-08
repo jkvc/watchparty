@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@syncframe/core':
-        specifier: ^0.2.2
-        version: 0.2.2(react@19.2.3)
+        specifier: ^0.3.0
+        version: 0.3.0(react@19.2.3)
       '@syncframe/redis':
-        specifier: ^0.2.0
-        version: 0.2.0(ioredis@5.11.1)(react@19.2.3)
+        specifier: ^0.3.0
+        version: 0.3.0(ioredis@5.11.1)(react@19.2.3)
       ioredis:
         specifier: ^5.11.1
         version: 5.11.1
@@ -536,16 +536,16 @@ packages:
   '@swc/helpers@0.5.15':
     resolution: {integrity: sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g==}
 
-  '@syncframe/core@0.2.2':
-    resolution: {integrity: sha512-vwOI49y02Fvyu3WsuTjQvV+oheOcIHYebqhwT0wJLzQyGWnuyjhqK63bRZhYT7xP4NuJR/cK3wRT5o8HssUKHA==}
+  '@syncframe/core@0.3.0':
+    resolution: {integrity: sha512-eGN0HIUbWf2drsz/ZzsfLlRI4uf9TLf6Sb462gTs8VHV7B+bhynTDURw9fZcQl4h6lokmHgqnFeVQjXE7d5ibA==}
     peerDependencies:
       react: ^19
     peerDependenciesMeta:
       react:
         optional: true
 
-  '@syncframe/redis@0.2.0':
-    resolution: {integrity: sha512-uBibDBZ8TKAxue6Heqb2AUwjalEhbXIuiLvU0t2cm3H5KHDqlvWTKiYueG41vlgN9DYORFYrOYMl34TSarbzpg==}
+  '@syncframe/redis@0.3.0':
+    resolution: {integrity: sha512-JM9ZG4YjgJATh+msGW04sXOMNZSnWqx3dwLD7KM0axGmgMJRy/ITfwIGzcjUKLKGcXQwj+CS+lfugG4Ajaavng==}
     peerDependencies:
       ioredis: ^5
 
@@ -2366,13 +2366,13 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  '@syncframe/core@0.2.2(react@19.2.3)':
+  '@syncframe/core@0.3.0(react@19.2.3)':
     optionalDependencies:
       react: 19.2.3
 
-  '@syncframe/redis@0.2.0(ioredis@5.11.1)(react@19.2.3)':
+  '@syncframe/redis@0.3.0(ioredis@5.11.1)(react@19.2.3)':
     dependencies:
-      '@syncframe/core': 0.2.2(react@19.2.3)
+      '@syncframe/core': 0.3.0(react@19.2.3)
       ioredis: 5.11.1
     transitivePeerDependencies:
       - react
